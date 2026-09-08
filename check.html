@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connection check — Attendance</title>
+<style>
+:root{--green:#0B6B3A;--ink:#10231B;--paper:#F2F6F3;--line:#DDE5E0;
+  --muted:#6E7C74;--red:#B3261E;--amber:#A85B00}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:var(--paper);color:var(--ink);padding:20px}
+.wrap{max-width:760px;margin:0 auto}
+h1{font-size:20px;font-weight:700;margin-bottom:4px}
+p.sub{font-size:13.5px;color:var(--muted);margin-bottom:20px}
+.box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin:10px 0 5px}
+input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;font-size:14px}
+button{background:var(--green);color:#fff;border:0;border-radius:9px;padding:13px 20px;
+  font-size:15px;font-weight:600;cursor:pointer;margin-top:16px;width:100%}
+.test{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line);align-items:flex-start}
+.test:first-child{border-top:0}
+.tag{flex:0 0 auto;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:20px;margin-top:1px}
+.ok{background:#E4F2EA;color:var(--green)}
+.no{background:#FBE9E7;color:var(--red)}
+.wait{background:#EEF1EF;color:var(--muted)}
+.warn{background:#FBEFE0;color:var(--amber)}
+.test .t{font-size:14px;font-weight:600}
+.test .d{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.55;word-break:break-word}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;
+  background:var(--paper);padding:1px 5px;border-radius:4px}
+.fix{background:#FFF8E9;border:1px solid #F0DCB4;border-radius:10px;padding:14px 16px;
+  margin-top:14px;font-size:13.5px;line-height:1.6}
+.fix b{display:block;margin-bottom:5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Attendance connection check</h1>
+  <p class="sub">Finds out exactly which part is not working. Nothing here changes any data.</p>
+
+  <div class="box">
+    <label for="url">Project URL</label>
+    <input id="url" placeholder="https://abcdefgh.supabase.co">
+    <label for="key">Publishable key (or legacy anon key)</label>
+    <input id="key" placeholder="sb_publishable_… or eyJ…">
+    <label for="tok">Shop device token (optional)</label>
+    <input id="tok" placeholder="3f9c2a51-8b7e-…">
+    <label for="em">Owner email (optional)</label>
+    <input id="em" type="email">
+    <label for="pw">Owner password (optional)</label>
+    <input id="pw" type="password">
+    <button id="run">Run the checks</button>
+  </div>
+
+  <div class="box" id="out"><p class="sub" style="margin:0">Results will appear here.</p></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let results = [];
+
+function add(state, title, detail, fix) {
+  results.push({ state, title, detail, fix });
+  render();
+}
+function render() {
+  $('out').innerHTML = results.map(r => `
+    <div class="test">
+      <span class="tag ${r.state}">${r.state === 'ok' ? 'PASS' : r.state === 'no' ? 'FAIL' : r.state === 'warn' ? 'CHECK' : '…'}</span>
+      <div><div class="t">${r.title}</div>
+      ${r.detail ? `<div class="d">${r.detail}</div>` : ''}
+      ${r.fix ? `<div class="fix">${r.fix}</div>` : ''}</div>
+    </div>`).join('');
+}
+
+$('run').onclick = async () => {
+  results = []; render();
+  const url = $('url').value.trim().replace(/\/+$/, '');
+  const key = $('key').value.trim();
+  const tok = $('tok').value.trim();
+  const em  = $('em').value.trim();
+  const pw  = $('pw').value;
+
+  // 1 — settings present
+  if (!url || !key) {
+    add('no', 'Project URL and key', 'Both boxes need filling in before anything can be tested.');
+    return;
+  }
+  if (url.includes('YOUR-PROJECT') || key.includes('YOUR-ANON')) {
+    add('no', 'Placeholder values', 'These are the example values, not your real ones.',
+      '<b>Fix</b>In Supabase: Project Settings → API Keys. Copy the Project URL and the publishable key.');
+    return;
+  }
+  add('ok', 'Settings filled in', url);
+
+  // 2 — key shape
+  if (key.startsWith('sb_publishable_')) {
+    add('ok', 'Key type', 'Publishable key. This is the current type and is safe in a public web page.');
+  } else if (key.startsWith('eyJ')) {
+    add('ok', 'Key type', 'Legacy anon key. Still works, being retired by Supabase end of 2026.');
+  } else if (key.startsWith('sb_secret_') || key.includes('service_role')) {
+    add('no', 'Key type', 'This looks like a SECRET key.',
+      '<b>Stop — do not use this</b>A secret key bypasses all security and must never sit in a web page. If you already uploaded it to GitHub, go to Settings → API Keys and revoke it now, then use the publishable key instead.');
+    return;
+  } else {
+    add('warn', 'Key type', 'Unrecognised format. Expected it to start with <code>sb_publishable_</code> or <code>eyJ</code>.');
+  }
+
+  // 3 — can we reach the project with this key
+  try {
+    const r = await fetch(url + '/rest/v1/rpc/app_roster', {
+      method: 'POST',
+      headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_token: '00000000-0000-0000-0000-000000000000' })
+    });
+    const text = await r.text();
+    if (r.status === 401 || r.status === 403) {
+      add('no', 'Reaching the database', `HTTP ${r.status}. ${text.slice(0, 200)}`,
+        '<b>Fix</b>The key is wrong or has been revoked. Project Settings → API Keys → copy the publishable key again.');
+      return;
+    }
+    if (r.status === 404) {
+      add('no', 'Reaching the database', 'HTTP 404 — the app_roster function does not exist.',
+        '<b>Fix</b>schema.sql was not run, or not run fully. Open the SQL Editor and run it again from the top.');
+      return;
+    }
+    if (!r.ok) {
+      add('no', 'Reaching the database', `HTTP ${r.status}. ${text.slice(0, 300)}`);
+      return;
+    }
+    add('ok', 'Reaching the database', 'The key works and app_roster exists.');
+  } catch (e) {
+    add('no', 'Reaching the database', String(e),
+      '<b>Fix</b>The URL is probably wrong, or the project is paused. Check Project Settings → API, and look for a "paused" banner on the Supabase home page.');
+    return;
+  }
+
+  // 4 — the shop token
+  if (tok) {
+    try {
+      const r = await fetch(url + '/rest/v1/rpc/app_roster', {
+        method: 'POST',
+        headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_token: tok })
+      });
+      const j = await r.json();
+      if (j && j.ok) {
+        const n = (j.employees || []).length;
+        add(n ? 'ok' : 'warn', 'Shop token',
+          `${j.location.name} (${j.location.code}) · ${n} employee(s) on the roster`,
+          n ? '' : '<b>Roster is empty</b>Employees exist but point at a different shop. Check Part 2 of the guide.');
+      } else {
+        add('no', 'Shop token', (j && j.error) || 'Rejected.',
+          '<b>Fix</b>Run <code>select code, name, device_token from locations;</code> and copy the token exactly.');
+      }
+    } catch (e) { add('no', 'Shop token', String(e)); }
+  } else {
+    add('wait', 'Shop token', 'Not entered — skipped.');
+  }
+
+  // 5 — owner sign in
+  if (em && pw) {
+    let token = null;
+    try {
+      const r = await fetch(url + '/auth/v1/token?grant_type=password', {
+        method: 'POST',
+        headers: { apikey: key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: em, password: pw })
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        add('no', 'Owner sign in', j.error_description || j.msg || j.error || `HTTP ${r.status}`,
+          '<b>Common causes</b>The user was never created (Authentication → Users → Add user), the email is not confirmed (tick <i>Auto Confirm User</i>), or the password is wrong.');
+      } else {
+        token = j.access_token;
+        add('ok', 'Owner sign in', 'Signed in successfully.');
+      }
+    } catch (e) { add('no', 'Owner sign in', String(e)); }
+
+    // 6 — permission row
+    if (token) {
+      try {
+        const r = await fetch(url + '/rest/v1/app_users?select=full_name,shop_id', {
+          headers: { apikey: key, Authorization: 'Bearer ' + token } });
+        const rows = await r.json();
+        if (Array.isArray(rows) && rows.length) {
+          add('ok', 'Dashboard permission',
+            rows[0].shop_id ? 'Access to one shop only.' : 'Access to all shops.');
+        } else {
+          add('no', 'Dashboard permission', 'Signed in, but no row in app_users — the dashboard will be empty.',
+            '<b>Fix</b>Run Part 3.2 of the guide:<br><code>insert into app_users (user_id, full_name, shop_id) select id, \'Owner\', null from auth.users where email = \'' + em.replace(/'/g, "''") + '\';</code>');
+        }
+      } catch (e) { add('no', 'Dashboard permission', String(e)); }
+
+      // 7 — can it read the live view
+      try {
+        const r = await fetch(url + '/rest/v1/v_shop_live?select=location_name,present,rostered', {
+          headers: { apikey: key, Authorization: 'Bearer ' + token } });
+        const rows = await r.json();
+        if (Array.isArray(rows)) {
+          add(rows.length ? 'ok' : 'warn', 'Dashboard data',
+            rows.length ? rows.map(x => `${x.location_name}: ${x.present}/${x.rostered} in`).join(' · ')
+                        : 'Readable, but no shops came back — usually the missing app_users row above.');
+        } else {
+          add('no', 'Dashboard data', JSON.stringify(rows).slice(0, 300));
+        }
+      } catch (e) { add('no', 'Dashboard data', String(e)); }
+    }
+  } else {
+    add('wait', 'Owner sign in', 'Email and password not entered — skipped.');
+  }
+
+  add('wait', 'Done', 'Send me a screenshot of this page if anything says FAIL.');
+};
+</script>
+</body>
+</html>
