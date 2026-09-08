@@ -152,19 +152,69 @@ td.num,th.num{text-align:right}
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ==========================================================
    SETTINGS — same two values as the kiosk page.
    ========================================================== */
-const SUPABASE_URL      = 'hhttps://llvvswsdmjhjacowzyfx.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsdnZzd3NkbWpoamFjb3d6eWZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4NDQzMDgsImV4cCI6MjEwNDQyMDMwOH0.9RUgHUXGBnjqYvu4Jvh82-qNIqEzTD6VSvsOprtjYFk-ANON-KEY';
-const REQUIRE_QR_ON_LOGOUT = true;   // false = skip the scan at logout
+const SUPABASE_URL      = 'https://YOUR-PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR-ANON-KEY';
 /* ========================================================== */
 
 const $ = id => document.getElementById(id);
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let sessions = [], shops = [], liveRows = [];
+
+/* ----------------------------------------------------------
+   No external library. Earlier this page loaded supabase-js
+   from a CDN; if that request failed the whole script died
+   before the Sign in button was wired up, so the button did
+   nothing and showed no error. Plain fetch removes that whole
+   class of failure.
+---------------------------------------------------------- */
+const API = SUPABASE_URL.replace(/\/+$/, '');
+const TOKENS = 'aap_tokens';
+
+function saveTokens(t) { try { localStorage.setItem(TOKENS, JSON.stringify(t)); } catch (e) {} }
+function getTokens() { try { return JSON.parse(localStorage.getItem(TOKENS) || 'null'); } catch (e) { return null; } }
+function clearTokens() { try { localStorage.removeItem(TOKENS); } catch (e) {} }
+
+async function signIn(email, password) {
+  const r = await fetch(API + '/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error_description || j.msg || j.error || ('Sign in failed (' + r.status + ')'));
+  saveTokens({ access: j.access_token, refresh: j.refresh_token });
+  return true;
+}
+
+async function refreshToken() {
+  const t = getTokens();
+  if (!t || !t.refresh) return false;
+  const r = await fetch(API + '/auth/v1/token?grant_type=refresh_token', {
+    method: 'POST',
+    headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: t.refresh })
+  });
+  if (!r.ok) { clearTokens(); return false; }
+  const j = await r.json();
+  saveTokens({ access: j.access_token, refresh: j.refresh_token });
+  return true;
+}
+
+/* GET from a table or view. Retries once after refreshing an expired token. */
+async function q(path, retry = true) {
+  const t = getTokens();
+  if (!t) throw new Error('Not signed in');
+  const r = await fetch(API + '/rest/v1/' + path, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + t.access }
+  });
+  if (r.status === 401 && retry && await refreshToken()) return q(path, false);
+  const j = await r.json().catch(() => null);
+  if (!r.ok) throw new Error((j && (j.message || j.hint)) || ('Request failed (' + r.status + ')'));
+  return j || [];
+}
 
 const pad2 = n => String(n).padStart(2, '0');
 const fmtTime = ts => ts ? new Date(ts).toLocaleTimeString('en-IN',
@@ -174,17 +224,21 @@ const hrs = m => (m == null) ? '—' : Math.floor(m / 60) + 'h ' + pad2(m % 60) 
 /* ---------------- auth ---------------- */
 $('signin').onclick = async () => {
   $('loginErr').textContent = '';
-  const { error } = await sb.auth.signInWithPassword({
-    email: $('em').value.trim(), password: $('pw').value });
-  if (error) { $('loginErr').textContent = error.message; return; }
-  boot();
+  $('signin').disabled = true; $('signin').textContent = 'Signing in…';
+  try {
+    await signIn($('em').value.trim(), $('pw').value);
+    await boot();
+  } catch (e) {
+    $('loginErr').textContent = e.message;
+  } finally {
+    $('signin').disabled = false; $('signin').textContent = 'Sign in';
+  }
 };
 $('pw').addEventListener('keydown', e => { if (e.key === 'Enter') $('signin').click(); });
-$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+$('signout').onclick = () => { clearTokens(); location.reload(); };
 
 async function boot() {
-  const { data } = await sb.auth.getSession();
-  if (!data.session) { $('loginView').hidden = false; $('appView').hidden = true; return; }
+  if (!getTokens()) { $('loginView').hidden = false; $('appView').hidden = true; return; }
   $('loginView').hidden = true; $('appView').hidden = false;
   const now = new Date();
   $('month').value = now.getFullYear() + '-' + pad2(now.getMonth() + 1);
@@ -196,16 +250,16 @@ async function boot() {
 
 /* ---------------- live ---------------- */
 async function loadShops() {
-  const { data } = await sb.from('locations').select('id,code,name').order('name');
+  const data = await q('locations?select=id,code,name&order=name');
   shops = data || [];
   $('shopFilter').innerHTML = '<option value="">All shops</option>' +
     shops.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
 }
 
 async function loadLive() {
-  const [{ data: agg }, { data: rows }] = await Promise.all([
-    sb.from('v_shop_live').select('*'),
-    sb.from('v_live').select('*')
+  const [agg, rows] = await Promise.all([
+    q('v_shop_live?select=*'),
+    q('v_live?select=*')
   ]);
   liveRows = rows || [];
   const list = (agg || []).sort((a, b) => a.location_name.localeCompare(b.location_name));
@@ -250,12 +304,15 @@ async function loadMonth() {
   const from = `${y}-${pad2(mo)}-01`;
   const to = `${mo === 12 ? y + 1 : y}-${pad2(mo === 12 ? 1 : mo + 1)}-01`;
 
-  let q = sb.from('v_sessions').select('*').gte('work_date', from).lt('work_date', to);
+  let path = `v_sessions?select=*&work_date=gte.${from}&work_date=lt.${to}`;
   const shop = $('shopFilter').value;
-  if (shop) q = q.eq('location_id', shop);
-  const { data, error } = await q;
-  if (error) { $('monthly').innerHTML = `<tbody><tr><td class="empty">${error.message}</td></tr></tbody>`; return; }
-  sessions = data || [];
+  if (shop) path += '&location_id=eq.' + shop;
+  try {
+    sessions = await q(path);
+  } catch (e) {
+    $('monthly').innerHTML = `<tbody><tr><td class="empty">${e.message}</td></tr></tbody>`;
+    return;
+  }
   renderMonthly();
 }
 
@@ -302,9 +359,8 @@ $('refresh').onclick = () => { loadLive(); loadMonth(); };
 $('empPick').onchange = async () => {
   const id = $('empPick').value;
   if (!id) { $('history').innerHTML = '<tbody><tr><td class="empty">Pick an employee.</td></tr></tbody>'; return; }
-  const { data } = await sb.from('v_sessions').select('*')
-    .eq('employee_id', id).order('work_date', { ascending: false }).limit(60);
-  const rows = data || [];
+  const rows = await q('v_sessions?select=*&employee_id=eq.' + id +
+                       '&order=work_date.desc&limit=60');
   if (!rows.length) { $('history').innerHTML = '<tbody><tr><td class="empty">No records.</td></tr></tbody>'; return; }
   $('history').innerHTML =
     '<thead><tr><th>Date</th><th>Shop</th><th>Login</th><th>Logout</th><th>Late</th><th class="num">Worked</th></tr></thead><tbody>' +

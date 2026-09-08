@@ -128,8 +128,8 @@ select{width:100%;padding:14px;border:1px solid var(--line);border-radius:11px;b
 /* ==========================================================
    SETTINGS — fill in the first two, then save.
    ========================================================== */
-const SUPABASE_URL      = 'hhttps://llvvswsdmjhjacowzyfx.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsdnZzd3NkbWpoamFjb3d6eWZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4NDQzMDgsImV4cCI6MjEwNDQyMDMwOH0.9RUgHUXGBnjqYvu4Jvh82-qNIqEzTD6VSvsOprtjYFk-ANON-KEY';
+const SUPABASE_URL      = 'https://YOUR-PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR-ANON-KEY';
 const REQUIRE_QR_ON_LOGOUT = true;   // false = skip the scan at logout
 const PIN_LENGTH = 6;
 /* ========================================================== */
@@ -156,7 +156,12 @@ async function rpc(fn, args) {
                'Content-Type': 'application/json' },
     body: JSON.stringify(args)
   });
-  if (!r.ok) throw new Error('Network ' + r.status);
+  if (!r.ok) {
+    const body = await r.text().catch(() => '');
+    if (r.status === 401 || r.status === 403) throw new Error('Key rejected (' + r.status + ')');
+    if (r.status === 404) throw new Error('Function missing — was schema.sql run?');
+    throw new Error('Server error ' + r.status + ' ' + body.slice(0, 80));
+  }
   return r.json();
 }
 
@@ -236,7 +241,15 @@ async function loadRoster() {
       staff.map(s => '<option value="' + s.id + '"' + (s.id === keep ? ' selected' : '') + '>' +
         s.name + (s.is_in ? '  — in since ' + s.since : '') + '</option>').join('');
     refresh();
-  } catch (e) { /* offline: keep the last roster on screen */ }
+  } catch (e) {
+    // Only stay quiet if we already have a roster on screen — otherwise the
+    // page would sit on "Loading..." forever and tell nobody why.
+    if (!staff.length) {
+      $('locCode').textContent = 'Cannot connect';
+      $('locSub').textContent = String(e.message || e).slice(0, 90);
+      $('msg').textContent = 'Check the Project URL and key in this file.';
+    }
+  }
 }
 $('emp').addEventListener('change', () => { pin = ''; $('msg').textContent = ''; paintPin(); });
 
