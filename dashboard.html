@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0B6B3A">
+<title>Attendance dashboard — Aadhya Arogya</title>
+<style>
+:root{
+  --green:#0B6B3A; --ink:#10231B; --paper:#F2F6F3; --line:#DDE5E0;
+  --muted:#6E7C74; --amber:#A85B00; --amber-bg:#FBEFE0;
+  --red:#B3261E; --red-bg:#FBE9E7; --grey:#C3CEC7;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:var(--paper);color:var(--ink);font-variant-numeric:tabular-nums}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--green);outline-offset:2px}
+
+.bar{background:var(--green);color:#fff;padding:14px 20px;display:flex;
+  justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.bar h1{font-size:16px;font-weight:700;letter-spacing:1.2px}
+.bar .sub{font-size:12.5px;opacity:.85}
+.bar button{background:rgba(255,255,255,.16);border:0;color:#fff;border-radius:8px;
+  padding:8px 14px;font-size:13.5px;cursor:pointer}
+
+.wrap{max-width:1080px;margin:0 auto;padding:20px 16px 60px}
+
+/* login */
+.login{max-width:380px;margin:8vh auto;background:#fff;border-radius:16px;padding:28px 26px;
+  box-shadow:0 8px 30px rgba(16,35,27,.10)}
+.login h2{font-size:19px;font-weight:700;margin-bottom:4px}
+.login p{font-size:13.5px;color:var(--muted);margin-bottom:20px}
+.login label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:5px}
+.login input{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:10px;
+  font-size:15px;margin-bottom:14px;background:#fff}
+.login button{width:100%;background:var(--green);color:#fff;border:0;border-radius:10px;
+  padding:14px;font-size:15.5px;font-weight:600;cursor:pointer}
+.login .err{color:var(--red);font-size:13px;min-height:18px;margin-bottom:8px}
+
+/* cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:22px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px 16px}
+.stat .l{font-size:12.5px;color:var(--muted)}
+.stat .n{font-size:27px;font-weight:700;margin-top:4px;line-height:1}
+.stat.warn .n{color:var(--amber)}
+.stat.bad .n{color:var(--red)}
+
+h3.sec{font-size:15px;font-weight:700;margin:26px 0 10px;display:flex;
+  justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h3.sec .tools{display:flex;gap:8px;align-items:center;font-weight:400}
+h3.sec input,h3.sec select{padding:7px 10px;border:1px solid var(--line);
+  border-radius:8px;font-size:13.5px;background:#fff}
+h3.sec button{background:#fff;border:1px solid var(--line);border-radius:8px;
+  padding:7px 13px;font-size:13.5px;cursor:pointer}
+h3.sec button:hover{border-color:var(--green);color:var(--green)}
+
+.board{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.row{display:grid;grid-template-columns:minmax(0,1.3fr) 140px 58px minmax(0,1fr);
+  gap:14px;align-items:center;padding:12px 16px;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row .sh{font-size:14.5px;font-weight:600}
+.row .sh small{display:block;font-weight:400;color:var(--muted);font-size:12px;margin-top:1px}
+.bars{display:flex;gap:3px}
+.bars span{height:24px;flex:1;border-radius:3px;background:var(--grey)}
+.bars span.on{background:var(--green)}
+.bars span.late{background:var(--amber)}
+.cnt{font-size:14.5px;font-weight:700;text-align:right}
+.flags{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.flag{font-size:11.5px;padding:3px 9px;border-radius:20px;background:var(--amber-bg);
+  color:var(--amber);font-weight:600}
+.flag.bad{background:var(--red-bg);color:var(--red)}
+.flag.g{background:#EEF1EF;color:var(--muted)}
+@media(max-width:760px){
+  .row{grid-template-columns:1fr 1fr;gap:8px}
+  .bars{grid-column:1/-1;order:3}
+  .flags{justify-content:flex-start;grid-column:1/-1;order:4}
+  .cnt{text-align:left}
+}
+
+table{width:100%;border-collapse:collapse;background:#fff;font-size:13.5px}
+.tw{border:1px solid var(--line);border-radius:12px;overflow:auto}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:12px;padding:10px 14px;
+  border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:10px 14px;border-top:1px solid var(--line);white-space:nowrap}
+tbody tr:first-child td{border-top:0}
+td.num,th.num{text-align:right}
+.warnt{color:var(--amber);font-weight:600}
+.empty{padding:30px;text-align:center;color:var(--muted);font-size:14px}
+.note{font-size:12.5px;color:var(--muted);margin-top:12px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<div id="loginView">
+  <div class="login">
+    <h2>Attendance dashboard</h2>
+    <p>Aadhya Arogya Pharmacy — owner access</p>
+    <label for="em">Email</label>
+    <input id="em" type="email" autocomplete="username">
+    <label for="pw">Password</label>
+    <input id="pw" type="password" autocomplete="current-password">
+    <div class="err" id="loginErr"></div>
+    <button id="signin">Sign in</button>
+  </div>
+</div>
+
+<div id="appView" hidden>
+  <div class="bar">
+    <div>
+      <h1>ATTENDANCE DASHBOARD</h1>
+      <div class="sub" id="asOf">—</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="refresh">Refresh</button>
+      <button id="signout">Sign out</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="cards">
+      <div class="stat"><div class="l">Clocked in now</div><div class="n" id="sIn">–</div></div>
+      <div class="stat warn"><div class="l">Late today</div><div class="n" id="sLate">–</div></div>
+      <div class="stat warn"><div class="l">Missing logout</div><div class="n" id="sMiss">–</div></div>
+      <div class="stat bad"><div class="l">Shops unstaffed</div><div class="n" id="sEmpty">–</div></div>
+    </div>
+
+    <h3 class="sec">Live by shop</h3>
+    <div class="board" id="board"><div class="empty">Loading…</div></div>
+    <p class="note">Each bar segment is one rostered person — green in on time, amber late,
+      grey not in yet. "Nobody in" on a shop that should be open usually means a dead phone
+      or a shop that did not open.</p>
+
+    <h3 class="sec">
+      <span>Monthly report</span>
+      <span class="tools">
+        <input type="month" id="month">
+        <select id="shopFilter"><option value="">All shops</option></select>
+        <button id="csvEmp">Export employees</button>
+        <button id="csvRaw">Export raw rows</button>
+      </span>
+    </h3>
+    <div class="tw"><table id="monthly"><tbody><tr><td class="empty">Loading…</td></tr></tbody></table></div>
+    <p class="note">Hours exclude any session with no logout — those rows are counted in the
+      "no logout" column instead, because their duration is unknown.</p>
+
+    <h3 class="sec">
+      <span>Employee history</span>
+      <span class="tools"><select id="empPick"><option value="">Select employee</option></select></span>
+    </h3>
+    <div class="tw"><table id="history"><tbody><tr><td class="empty">Pick an employee.</td></tr></tbody></table></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ==========================================================
+   SETTINGS — same two values as the kiosk page.
+   ========================================================== */
+const SUPABASE_URL      = 'hhttps://llvvswsdmjhjacowzyfx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsdnZzd3NkbWpoamFjb3d6eWZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4NDQzMDgsImV4cCI6MjEwNDQyMDMwOH0.9RUgHUXGBnjqYvu4Jvh82-qNIqEzTD6VSvsOprtjYFk-ANON-KEY';
+const REQUIRE_QR_ON_LOGOUT = true;   // false = skip the scan at logout
+/* ========================================================== */
+
+const $ = id => document.getElementById(id);
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let sessions = [], shops = [], liveRows = [];
+
+const pad2 = n => String(n).padStart(2, '0');
+const fmtTime = ts => ts ? new Date(ts).toLocaleTimeString('en-IN',
+  { hour: 'numeric', minute: '2-digit' }) : '—';
+const hrs = m => (m == null) ? '—' : Math.floor(m / 60) + 'h ' + pad2(m % 60) + 'm';
+
+/* ---------------- auth ---------------- */
+$('signin').onclick = async () => {
+  $('loginErr').textContent = '';
+  const { error } = await sb.auth.signInWithPassword({
+    email: $('em').value.trim(), password: $('pw').value });
+  if (error) { $('loginErr').textContent = error.message; return; }
+  boot();
+};
+$('pw').addEventListener('keydown', e => { if (e.key === 'Enter') $('signin').click(); });
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function boot() {
+  const { data } = await sb.auth.getSession();
+  if (!data.session) { $('loginView').hidden = false; $('appView').hidden = true; return; }
+  $('loginView').hidden = true; $('appView').hidden = false;
+  const now = new Date();
+  $('month').value = now.getFullYear() + '-' + pad2(now.getMonth() + 1);
+  await loadShops();
+  await loadLive();
+  await loadMonth();
+  setInterval(loadLive, 60000);
+}
+
+/* ---------------- live ---------------- */
+async function loadShops() {
+  const { data } = await sb.from('locations').select('id,code,name').order('name');
+  shops = data || [];
+  $('shopFilter').innerHTML = '<option value="">All shops</option>' +
+    shops.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+}
+
+async function loadLive() {
+  const [{ data: agg }, { data: rows }] = await Promise.all([
+    sb.from('v_shop_live').select('*'),
+    sb.from('v_live').select('*')
+  ]);
+  liveRows = rows || [];
+  const list = (agg || []).sort((a, b) => a.location_name.localeCompare(b.location_name));
+
+  $('sIn').textContent    = list.reduce((n, s) => n + s.present, 0);
+  $('sLate').textContent  = list.reduce((n, s) => n + s.late, 0);
+  $('sMiss').textContent  = list.reduce((n, s) => n + s.missing_logout, 0);
+  $('sEmpty').textContent = list.filter(s => s.present === 0).length;
+  $('asOf').textContent = list.length + ' shops · updated ' +
+    new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+
+  if (!list.length) { $('board').innerHTML = '<div class="empty">No shops yet.</div>'; return; }
+
+  $('board').innerHTML = list.map(s => {
+    const mine = liveRows.filter(r => r.location_id === s.location_id);
+    const segs = mine.map(r =>
+      r.is_in ? (r.late_today ? 'late' : 'on') : '').map(c => `<span class="${c}"></span>`).join('');
+    const flags = [];
+    if (s.late)           flags.push(`<span class="flag">${s.late} late</span>`);
+    if (s.missing_logout) flags.push(`<span class="flag">${s.missing_logout} no logout</span>`);
+    if (s.present === 0)  flags.push(`<span class="flag bad">nobody in</span>`);
+    else if (s.not_in_yet) flags.push(`<span class="flag g">${s.not_in_yet} not in</span>`);
+    return `<div class="row">
+      <div class="sh">${s.location_name}<small>${s.shift_start.slice(0,5)} – ${s.shift_end.slice(0,5)}</small></div>
+      <div class="bars">${segs}</div>
+      <div class="cnt">${s.present}/${s.rostered}</div>
+      <div class="flags">${flags.join('')}</div></div>`;
+  }).join('');
+
+  const keep = $('empPick').value;
+  const names = [...new Map(liveRows.map(r => [r.employee_id, r])).values()]
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  $('empPick').innerHTML = '<option value="">Select employee</option>' +
+    names.map(r => `<option value="${r.employee_id}"${r.employee_id===keep?' selected':''}>${r.full_name} — ${r.location_name}</option>`).join('');
+}
+
+/* ---------------- monthly ---------------- */
+async function loadMonth() {
+  const m = $('month').value;
+  if (!m) return;
+  const [y, mo] = m.split('-').map(Number);
+  const from = `${y}-${pad2(mo)}-01`;
+  const to = `${mo === 12 ? y + 1 : y}-${pad2(mo === 12 ? 1 : mo + 1)}-01`;
+
+  let q = sb.from('v_sessions').select('*').gte('work_date', from).lt('work_date', to);
+  const shop = $('shopFilter').value;
+  if (shop) q = q.eq('location_id', shop);
+  const { data, error } = await q;
+  if (error) { $('monthly').innerHTML = `<tbody><tr><td class="empty">${error.message}</td></tr></tbody>`; return; }
+  sessions = data || [];
+  renderMonthly();
+}
+
+function summarise() {
+  const by = new Map();
+  sessions.forEach(s => {
+    if (!by.has(s.employee_id)) by.set(s.employee_id, {
+      name: s.employee_name, shop: s.location_name,
+      days: new Set(), late: 0, mins: 0, noOut: 0
+    });
+    const e = by.get(s.employee_id);
+    e.days.add(s.work_date);
+    if (s.is_late) e.late++;
+    if (s.logout_at == null) e.noOut++;
+    else e.mins += (s.minutes_worked || 0);
+  });
+  return [...by.values()].map(e => ({
+    name: e.name, shop: e.shop, days: e.days.size,
+    late: e.late, noOut: e.noOut, mins: e.mins
+  })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function renderMonthly() {
+  const rows = summarise();
+  if (!rows.length) {
+    $('monthly').innerHTML = '<tbody><tr><td class="empty">No attendance in this month.</td></tr></tbody>';
+    return;
+  }
+  $('monthly').innerHTML =
+    '<thead><tr><th>Employee</th><th>Shop</th><th class="num">Days</th>' +
+    '<th class="num">Late</th><th class="num">No logout</th><th class="num">Hours</th></tr></thead><tbody>' +
+    rows.map(r => `<tr><td>${r.name}</td><td>${r.shop}</td>
+      <td class="num">${r.days}</td>
+      <td class="num${r.late ? ' warnt' : ''}">${r.late || '—'}</td>
+      <td class="num${r.noOut ? ' warnt' : ''}">${r.noOut || '—'}</td>
+      <td class="num">${hrs(r.mins)}</td></tr>`).join('') + '</tbody>';
+}
+
+$('month').onchange = loadMonth;
+$('shopFilter').onchange = loadMonth;
+$('refresh').onclick = () => { loadLive(); loadMonth(); };
+
+/* ---------------- history ---------------- */
+$('empPick').onchange = async () => {
+  const id = $('empPick').value;
+  if (!id) { $('history').innerHTML = '<tbody><tr><td class="empty">Pick an employee.</td></tr></tbody>'; return; }
+  const { data } = await sb.from('v_sessions').select('*')
+    .eq('employee_id', id).order('work_date', { ascending: false }).limit(60);
+  const rows = data || [];
+  if (!rows.length) { $('history').innerHTML = '<tbody><tr><td class="empty">No records.</td></tr></tbody>'; return; }
+  $('history').innerHTML =
+    '<thead><tr><th>Date</th><th>Shop</th><th>Login</th><th>Logout</th><th>Late</th><th class="num">Worked</th></tr></thead><tbody>' +
+    rows.map(r => `<tr><td>${r.work_date}</td><td>${r.location_name}</td>
+      <td>${fmtTime(r.login_at)}</td>
+      <td>${r.logout_at ? fmtTime(r.logout_at) : '<span class="warnt">missing</span>'}</td>
+      <td>${r.is_late ? '<span class="warnt">late</span>' : ''}</td>
+      <td class="num">${hrs(r.minutes_worked)}</td></tr>`).join('') + '</tbody>';
+};
+
+/* ---------------- export ---------------- */
+function download(name, rows) {
+  const csv = rows.map(r => r.map(c =>
+    `"${String(c == null ? '' : c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+$('csvEmp').onclick = () => {
+  const rows = [['Employee', 'Shop', 'Days present', 'Late days', 'Days no logout', 'Minutes', 'Hours']];
+  summarise().forEach(r => rows.push([r.name, r.shop, r.days, r.late, r.noOut,
+    r.mins, (r.mins / 60).toFixed(2)]));
+  download('attendance-summary-' + $('month').value + '.csv', rows);
+};
+$('csvRaw').onclick = () => {
+  const rows = [['Attendance ID', 'Date', 'Employee', 'Location', 'Login', 'Logout',
+                 'Late', 'Minutes', 'Device']];
+  sessions.slice().sort((a, b) => (a.work_date + a.login_at).localeCompare(b.work_date + b.login_at))
+    .forEach(s => rows.push([s.attendance_id, s.work_date, s.employee_name, s.location_name,
+      fmtTime(s.login_at), s.logout_at ? fmtTime(s.logout_at) : '',
+      s.is_late ? 'Yes' : '', s.minutes_worked, s.login_device]));
+  download('attendance-rows-' + $('month').value + '.csv', rows);
+};
+
+boot();
+</script>
+</body>
+</html>
